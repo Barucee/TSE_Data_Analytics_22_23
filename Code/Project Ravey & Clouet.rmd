@@ -1,0 +1,658 @@
+---
+title: 'Project : Data analytics'
+author: "Benjamin Clouet & Bruce"
+date: "21/03/2023"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r Load of the libraries, echo = F, include=FALSE}
+
+source("Functions.R")
+
+# Package to parallelize computing :
+library(parallel)
+
+# Packages to manipulate data :
+library(dplyr)
+library(reshape2)
+library(purrr)
+
+# Packages graphs/plots :
+library(ggplot2)
+library(GGally)
+library(ggplot2)
+library(gridExtra)
+library(plotly)
+library(ggcorrplot)
+library(patchwork)
+library(RColorBrewer)
+
+# Packages for unsupervised Machine Learning :
+library(factoextra)
+library(cluster)
+library(dbscan)
+
+#We set the randomization
+set.seed(777)
+```
+
+# 1- Discovery: 
+
+A Shop has collected data from its customers through membership cards and need helps to understand them. The CEO came asking “Ravey & Clouet Data Consulting company” to understand them and get any advice that we could have according to their data. 
+
+ The dataset has the following variables : 
+- ID 
+- Gender 
+- Age 
+- Income  
+- Spending Score 
+- Profession 
+- Experience 
+- Family Size 
+
+The Spending Score is a metric that is determined according to predefined parameters like purchasing data and customer behaviour. 
+
+We have firstly thought about doing regression/ML supervised, to predict the spending score according to some variables. However, we finally thought it was not very useful, from a business point of view. So, we finally decide to do unsupervised machine learning to be able to create a group of "target customers" that the shop must advertise by phone/e-mail. 
+
+As "student challenge", we have decided to try to do different unsupervised machine learning that we did not see in course, to understand better each advantages / disadvantages / characteristic of each model. 
+
+We have supposed different things on the data set: 
+
+-   Is the repartition between woman and men is the same? 
+-   Is the variable normalized ? 
+-   Is the repartition of each variable being the same between men and women? 
+- Is it possible to generate cluster and give advice to the shop depending on the characteristics of each cluster
+
+# 2- Data Preparation: 
+
+## A- Find and load the data set: 
+
+First, it is Kaggle Dataset, so we did not have to do any difficult things to extract the data (Scraping, etc.). We just parallelize on the different CPUs of the computer the “load” of the data. Indeed, in our case the dataset is not huge, but good practice is important. Indeed, parallelizing the load of the data allows to have small part of the data, which is attributed to CPU of your computer, and then merged. It should allow to do the process faster. 
+
+
+```{r Parallelization of the load of the data}
+
+path <- '../Data/Customers.csv'
+
+cl <- makeCluster(detectCores())
+df <- parLapply(cl, path, import_df)
+df <- bind_rows(df)
+stopCluster(cl)
+
+colnames(df) <- c("ID", "Gender", "Age", "Income", "SpendingScore", "Profession", "Experience", "FamilySize")
+```
+
+```{r Data Inspection - show the data}
+# Show the data
+head(df)
+```
+
+We first tried to get information about the data set. We had this information: 
+
+- The data frame contains 2000 rows and 8 columns
+
+```{r Data Inspection - show size of data set}
+# Display the size of the DataSet
+cat(paste0("The dataframe contains ", nrow(df), " rows and ", ncol(df), " columns\n"))
+```
+
+- They are all integer columns, unless gender and profession 
+
+```{r Data Inspection - show columns data type}
+# Print column data types
+sapply(df, class)
+```
+
+- There is missing value for the columns: Profession. 
+
+- There is some variable as age which are equals to 0 (and little bit more) and so impossible. 
+
+```{r Data Inspection - show summary statistics}
+# Summary statistics for the numerical columns
+summary(df)
+```
+## C- NA treatment: 
+
+We had problems for the treatment of NA and aberrative value. Indeed, our data set is already very small, so it was difficult to remove them.  
+
+About the NA of the column profession, we decided to label them as “unknown”. 
+
+For the treatment of the customer which are under 18 and already a job we decided to remove them to have a data set consistent (indeed, there is no blue collar in our dataset, so we decided to remove before 18, but it could be 22-23 following the job they have). 
+
+
+```{r Data Inspection - Missing value}
+
+# Change NA of profession column by "unknown"
+df$Profession[df$Profession == ""] <- "Unknown"
+# Remove people with less than 18, it has been choosen arbitrarly
+df <- df[df$Age >= 18,]
+
+```
+
+
+# 3- Model Planning: 
+
+## A- Exploratory Data analysis: 
+
+We first did a pair plot to look at deeper the variable. However, it does not look very well (not like Python with the seaborn package which looks amazing). 
+
+```{r EDA - pairplot}
+
+# Remove CustomerID column
+`df_sans_ID` <- df[, !(names(df) == "ID")]
+
+# Create pairplot
+ggpairs(data = df_sans_ID, 
+        aes(color = Gender),
+        columns = 1:6,
+        title = "Pairplot of Customer Data")
+
+```
+
+We can see from this plot that there is a lot more women than men in the shop. The density distribution of each variable is sensibly the same whatever the gender. 
+
+Then, we display the density histogram/curve of each variable which were integers, in another plot to see them better. 
+
+```{r EDA - descriptive statistics 2}
+
+# create a list of all integer variables in the data frame
+int_vars <- names(df_sans_ID)[sapply(df_sans_ID, is.integer)]
+
+# create a function to plot a histogram density and density curve for a given variable
+plot_int_var <- function(var) {
+  ggplot(df_sans_ID, aes_string(x = var)) +
+    geom_histogram(aes(y = ..density..), binwidth = 1, fill = "white", color = "blue") +
+    geom_density(alpha = 0.5, fill = "lightblue") +
+    labs(title = var)
+}
+
+# create a list of ggplot objects for each integer variable
+plots <- lapply(int_vars, plot_int_var)
+
+# combine the ggplot objects into subplots using the patchwork package
+wrap_plots <- wrap_plots(plots, ncol = 3)
+
+# display the subplots
+wrap_plots
+```
+
+We also plot some other graphs to look at the distribution of variable and the average per gender. We will show you some here, but you can play with our RshinyApp to check more. 
+
+```{r EDA - descriptive statistics - creation age by gender}
+
+# plot some descriptive statistics of the data by gender in order to show some
+plots_income_by_gender <- plot_by_gender(df, "Income")
+
+```
+
+
+```{r EDA - descriptive statistics - Age Hist per gender}
+
+plots_income_by_gender$hist
+
+```
+
+```{r EDA - descriptive statistics - Age bar per gender}
+
+plots_income_by_gender$bar
+
+```
+
+We also plot average of the variables depending on the profession: 
+
+```{r EDA - descriptive statistics - age_egineer_healthcare}
+
+plots_age_Engineer_Healthcare <- plot_by_profession(df, "Age","Engineer","Healthcare")
+
+```
+
+```{r EDA - descriptive statistics - age_egineer_healthcare hist}
+
+plots_age_Engineer_Healthcare$hist
+
+```
+
+```{r EDA - descriptive statistics - age_egineer_healthcare bar}
+
+plots_age_Engineer_Healthcare$bar
+
+```
+
+Finally, we have plotted a correlation matrix to see the correlation between the variables
+
+```{r EDA - correlation heatmap}
+
+df_sans_ID$gender_binary <- ifelse(df_sans_ID$Gender == "Male", 1,0)
+
+df_sans_catorical_variable <- subset(df_sans_ID, select = -c(Profession, Gender))
+
+
+corr_mat <- round(cor(df_sans_catorical_variable),2)
+p_mat <- cor_pmat(df_sans_catorical_variable)
+
+
+
+# plotting the interactive corr heatmap
+corr_mat <- ggcorrplot(
+  corr_mat, hc.order = TRUE, type = "full",
+  outline.col = "white",
+  p.mat = p_mat,
+) 
+ 
+ggplotly(corr_mat)
+```
+We can see that Spending Score is correlated with every variable; gender less but also correlated with all of them. Seeing, that some variable, we thought it could be interesting to remove some variable. 
+
+## B- Choice of variable: 
+
+Indeed, removing some variable before doing our clustering is we think a good idea. Indeed, after understanding what exactly unsupervised model do, we were asking if using binary variable (gender, each profession) was not a mistake. Indeed, our first thought was that it would double each for each cluster by binary variable. Indeed, after reading this website, it looked strange to do that unless we did PCA. Because we did not find any marketing aim to clusterize by profession, we decided to remove it. Then, about the gender binary, because of the current situation of gender (LGBT) in our society, we also decided to remove it.  
+
+```{r Creation of the subset}
+df_Cluster <- subset(df, select = -c(ID,Experience, Profession, Gender))
+```
+
+
+## C- PCA :
+
+Principal Component Analysis (PCA) is a widely used technique in machine learning for dimensionality reduction and feature extraction. It works by transforming the original high-dimensional dataset into a lower-dimensional space while preserving as much of the variance in the data as possible. PCA accomplishes this by identifying the orthogonal axes, called principal components, that capture the most significant patterns of variation in the data. These principal components are linear combinations of the original features and are ordered by the amount of explained variance, with the first component accounting for the highest variance, the second component for the next highest, and so on. By selecting a smaller subset of principal components, PCA allows for a more manageable and interpretable representation of the data, often leading to improved model performance and reduced computational complexity. Additionally, PCA can help mitigate issues related to multicollinearity, noise, and overfitting in machine learning models. 
+  
+```{r Normalization of the subset}
+# Load required libraries
+
+set.seed(777)
+
+
+# Assuming your data is stored in a data frame called 'my_data'
+# Make sure the data is normalized before applying PCA
+dfnormalized <- data.frame(df$ID,scale(df_Cluster))
+
+names(dfnormalized) <- paste("normalized_", names(dfnormalized), sep = "")
+
+names(dfnormalized)[1] <- "ID"
+
+df <- merge(df, dfnormalized, by ="ID")
+
+
+NormalizedSubset <- c("normalized_Age",
+                      "normalized_Income",
+                      "normalized_SpendingScore",
+                      "normalized_FamilySize"
+                      ) 
+``` 
+
+
+```{r PCA - Scree plot}
+ # Perform PCA
+pca_result <- prcomp(df[,NormalizedSubset], center = TRUE, scale. = TRUE)
+
+# Calculate explained variance
+explained_variance_ratio <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+
+# Calculate cumulative explained variance
+cumulative_explained_variance <- cumsum(explained_variance_ratio)
+
+# Set a threshold for the cumulative explained variance, e.g., 0.95 for 95%
+threshold <- 0.8
+
+# Find the number of PCs needed to reach the threshold
+num_pcs <- which(cumulative_explained_variance >= threshold)[1]
+
+# Print the number of PCs
+cat("Number of Principal Components needed:", num_pcs, "\n")
+
+# Plot the Scree plot
+eigenvalues <- pca_result$sdev^2
+PCAChoice1 <- qplot(seq_along(eigenvalues), eigenvalues, geom = 'point') +
+  geom_line() +
+  xlab("Principal Components") +
+  ylab("Eigenvalues") +
+  ggtitle("Scree Plot") +
+  theme_minimal()
+print(PCAChoice1)
+``` 
+
+
+```{r PCA - Cumulative explained variance}
+
+# Plot the Cumulative Explained Variance
+PCAChoice2 <- qplot(seq_along(cumulative_explained_variance), cumulative_explained_variance, geom = 'point') +
+  geom_line() +
+  xlab("Principal Components") +
+  ylab("Cumulative Explained Variance") +
+  geom_hline(yintercept = threshold, linetype = "dashed", color = "red") +
+  ggtitle("Cumulative Explained Variance Plot") +
+  theme_minimal()
+print(PCAChoice2)
+
+``` 
+
+The first graph is scree plot. A scree plot is a graphical representation of the eigenvalues associated with each principal component in a principal component analysis (PCA). The scree plot allows you to visualize the amount of variance in the data explained by each principal component. The elbow point is at 2, so we should use this point. However, after looking at the ”Cumulative explained variance plot”, at 2 PCA it is less than 0.5 which is explained. Even 3, PCA is lower than 80%, so we decided to do not use PCA.
+
+
+## D- Characteristics/Advantages/Disadvantages of the models: 
+
+We will use different model of clustering: K-means, hierarchical clustering, and DBSCAN. It is a challenge because we have never seen/studied some of these models. We will then compare the results to propose to the CEO of the shop, the best advice for its advertisement/promotion campaign.  
+
+K-means is a partitional clustering algorithm that requires specifying the number of clusters (K) beforehand. It works by minimizing the within-cluster sum of squares. One of the main advantages of K-means is its simplicity, making it easy to implement and understand. It also has an efficient time complexity of O (n * I * K), which allows it to work well with large datasets. In cases where the clusters are well-separated and globular, K-means often produces good results. 
+	However, the K-means algorithm has its limitations. It assumes that clusters are spherical(convex) and have similar densities, which may not always be true for real-world datasets. The algorithm is sensitive to the initial placement of centroids and may converge to local optima instead of global optima. Additionally, K-means requires a priori knowledge of the number of clusters (K), which may not always be available. Lastly, the algorithm is sensitive to outliers, which can negatively impact the clustering results. 
+
+Hierarchical clustering is a clustering algorithm characterized by its ability to build a tree-like structure, known as a dendrogram, which represents the nested cluster hierarchy. The algorithm can either be agglomerative, using a bottom-up approach, or divisive, using a top-down approach. Unlike other clustering methods, hierarchical clustering does not require specifying the number of clusters beforehand. 
+
+The advantages of hierarchical clustering include providing a full hierarchy of clusters for different granularity levels, making it more intuitive and interpretable through dendrograms. The algorithm can work with various distance metrics and linkage criteria and does not require a priori knowledge of the number of clusters. However, there are some disadvantages to using hierarchical clustering. It has a higher time complexity compared to K-means, ranging from O(n2) to O(n3) depending on the linkage method, making it less suitable for large datasets. The algorithm is sensitive to the choice of distance metric and linkage method and does not guarantee optimality in the clustering results. 
+
+DBSCAN, or Density-Based Spatial Clustering of Applications with Noise, is a density-based clustering algorithm that identifies clusters based on high-density regions separated by low-density regions. Unlike some other clustering methods, DBSCAN does not require specifying the number of clusters beforehand and considers noise points, or outliers, during the clustering process. 
+
+Some of the advantages of DBSCAN include its ability to find clusters of arbitrary shapes and its robustness to noise and outliers. The algorithm does not require a priori knowledge of the number of clusters and only requires tuning two parameters: the radius (Eps) and the minimum number of points (MinPts). However, DBSCAN has some disadvantages. It is not suitable for datasets with varying densities and is sensitive to the choices of Eps and MinPts parameters. The algorithm struggles with high-dimensional data due to the curse of dimensionality, leading to degraded performance as the dimensionality of the dataset increases. 
+
+
+# 4- Model Building: 
+
+## A - K-Means: 
+
+Before beginning to run our model, we need to find the number of clusters which fit the best our data. To do that, we will plot different ‘test’. 
+We will first begin by Within-Cluster-Sum-of-Squares (WSS). WSS is a measure used to evaluate the quality of clustering in K-means clustering algorithm. To find the optimal number of clusters, WSS calculates the sum of squared distances between each point and its assigned cluster center. 
+
+```{r K-means - WSS}
+
+fviz_nbclust(df[,NormalizedSubset], FUN = kmeans, method = "wss")
+
+```
+
+To understand this graph, we must find the last elbow of this graph. It looks like it is around 6-7. 
+
+The average silhouette width (ASW) measures how similar a point is to its own cluster compared to other clusters. A high ASW value indicates that a point is well-matched to its own cluster and poorly matched to neighbouring clusters 
+
+```{r K-means - Silhouette average}
+
+fviz_nbclust(df[,NormalizedSubset], FUN = kmeans, method = "silhouette")
+
+```
+
+Looking at the graph, this measure is close to be the same for each number of cluster, even if 9 is the highest one.	 
+
+The method compares the total within-cluster variation for different numbers of clusters with their expected values under a null reference distribution, which is generated using a Monte Carlo simulation. The optimal number of clusters is the number that maximizes the gap between the observed within-cluster variation and the expected variation. The rationale is that if the gap between the observed and expected values is large for a certain number of clusters, it indicates that the clustering is good and there is a significant structure in the data. 
+
+```{r K-means - gap stat}
+
+gap_stat_kmeans <- clusGap(df[,NormalizedSubset], FUN = kmeans, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat_kmeans)
+
+```
+
+Following this graph; the optimal number is 2 or 9 but because we aim to target some customers, we finally chose to have more than 2 cluster. 
+
+```{r K-means - fitting}
+# Let's proceed the K-means model with the optimal value of K
+set.seed(777)
+kmeansmodel <- kmeans(df[,NormalizedSubset], centers=9, nstart=10)
+
+df$labels_kmeansmodel <- kmeansmodel$cluster
+
+
+#We save our model in order to do not run it again in case, just a good practice
+saveRDS(kmeansmodel, file="../Model/kmeansmodel.rds")
+```
+
+```{r K-means - change label names}
+
+# Define the mapping of cluster labels to names
+label_names <- c("Most valuable - Young, Rich",
+                 "Most valuable - Old, Rich",
+                 "Target - Old",
+                 "Valuable - Young, 'Poor'",
+                 "Less valuable - Old",
+                 "Target - Young",
+                 "Valuable - Old, 'Poor' ",
+                 "Less valuable - Young",
+                 "Least valuable"
+                 )
+
+# Use the mutate() function to create a new column with the corresponding names
+df <- mutate(df, Cluster_Kmeans_label_name = label_names[labels_kmeansmodel])
+
+order <- c("Target - Old",
+           "Target - Young",
+           "Most valuable - Young, Rich",
+           "Most valuable - Old, Rich",
+           "Valuable - Old, 'Poor' ",
+           "Valuable - Young, 'Poor'",
+           "Less valuable - Old",
+           "Less valuable - Young",
+           "Least valuable"
+           )
+
+```
+
+
+```{r K-means - labels}
+
+# The number of customers in each cluster
+Kmeans_clust_size <- df %>%
+  group_by(Cluster_Kmeans_label_name) %>%
+  summarise(K_Means_Clusters = n()) %>%
+  rename(Cluster = Cluster_Kmeans_label_name)
+
+# Display the Kmeans_clust_size
+Kmeans_clust_size
+
+```
+
+Then, we run the clustering algorithm, and we need now to evaluate our cluster. We will use the silhouette score. The silhouette score is a metric used to evaluate the quality of clustering in K-means clustering algorithm. The score measures how dense and well-separated the clusters are by considering both the intra-cluster distance and the inter-cluster distance. The score ranges from -1 to 1, with 1 indicating well-separated and dense clusters, 0 indicating overlapping clusters, and less than 0 indicating that data may be assigned to the wrong clusters. Silhouette plots can be used to identify the optimal number of clusters by examining cluster scores, fluctuations in cluster size, and the thickness of the silhouette plot. In general, a higher silhouette score indicates better clustering, and the optimal number of clusters is the one that maximizes the average silhouette score. 
+
+
+```{r K-means - Silhouette score}
+
+# Compute the silhouette width
+sil_width <- silhouette(kmeansmodel$cluster, dist(df[,NormalizedSubset]))
+
+# Visualize the silhouette plot
+fviz_silhouette(sil_width)
+
+```
+
+Following the size of the silhouette score, clusters are separated and well match. From the “width“ of each cluster, we can know that they have roughly the same size. 
+
+## B- Hierarchical clustering : 
+
+	The dendrogram below displays the hierarchical clusters produced through complete linkage, which merges clusters with the smallest maximum distance between their observations. The height of the branches represents the distance between the clusters. Clusters that share greater similarity are merged at lower levels and become increasingly dissimilar as we move towards the top of the dendrogram. To determine the number of clusters, we can slice the dendrogram horizontally. For example, if we slice it at 90 heights, we obtain around six clusters, with most customers belonging to the first cluster, marked in purple. Now, let us examine the outcomes of hierarchical clustering, which is based on customer spending and income. 
+
+
+```{r Hierarchical Clustering - Dendogram}
+
+hierachical_distance_matrix <- dist(df[,NormalizedSubset], method = "euclidean")
+
+hc <- hclust(hierachical_distance_matrix, method = "complete")
+
+plot(hc, hang = -1, main = "Hierarchical Clustering Dendrogram",
+     xlab = "Data Points",
+     ylab = "Distance",
+     sub="",
+     cex = 0.8
+     )
+
+```
+
+As done with the K-means we will use the same statistic plots to find how many clusters would best fit our data with Hierarchical clustering. 
+
+```{r Hierarchical Clustering - cluster evaluation number : WSS}
+
+fviz_nbclust(df[,NormalizedSubset], FUN = hcut, method = "wss")
+
+```
+
+The last elbow looks like to be at 7. 
+
+```{r Hierarchical Clustering - cluster evaluation number : Silhouette}
+
+fviz_nbclust(df[,NormalizedSubset], FUN = hcut, method = "silhouette")
+
+```
+
+Looking at the graph, this measure is close to be the same for each number of clusters, even if 9 is the highest one. Furthermore, we can note that the average silhouette width is lower than the K-Means one.  
+
+```{r Hierarchical Clustering - cluster evaluation number : Gap stat}
+
+gap_stat_hierarchical <- clusGap(df[,NormalizedSubset], FUN = hcut, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat_hierarchical)
+
+```
+
+
+According to this graph the best number of clusters are 2,9 and 7 following this order. 
+
+To conclude the hierarchical clustering part, we can see that the K-means method has a higher silhouette average. So, we will not go further with this method. 
+
+## C- DBSCAN 
+
+DBSCAN is a model, where we must tune hyper-parameters to get the best clusters. What will we do to find them is to a Grid Search to find the best cluster. 
+
+The heat plot below shows how many clusters were generated by the DBSCAN algorithm for the respective parameter combinations. 
+
+
+```{r DBSCAN - GridSearch 1}
+# In DBSCAN there are two major hyperparameters:
+# - eps
+# - min_samples
+# It is difficult arbitrarily to say what values will work the best.
+# Therefore, I will first create a matrix to investigate combinations.
+
+eps_values <- seq(0, 3, 0.1) # eps values to be investigated
+min_samples <- seq(1, 3) # min_samples values to be investigated
+
+DBSCAN_params <- expand.grid(eps_values, min_samples)
+colnames(DBSCAN_params) <- c("eps", "min_samples")
+```
+
+
+```{r DBSCAN - GridSearch 2}
+
+no_of_clusters <- vector()
+sil_score <- vector()
+
+for (i in 1:nrow(DBSCAN_params)) {
+  p <- DBSCAN_params[i, ]
+  DBS_clustering <- dbscan(df[,NormalizedSubset], eps = p$eps, minPts = p$min_samples)
+  no_of_clusters <- append(no_of_clusters, length(unique(DBS_clustering$cluster)))
+  
+  # Calculate silhouette score only if there is more than one cluster
+  if (length(unique(DBS_clustering$cluster)) > 1) {
+    numeric_matrix <- as.matrix(sapply(df[,NormalizedSubset], as.numeric))
+    distance_matrix <- dist(numeric_matrix, method = "euclidean")
+    sil_score <- append(sil_score, mean(silhouette(DBS_clustering$cluster, distance_matrix), na.rm = TRUE))
+  } else {
+    sil_score <- append(sil_score, NA)
+  }
+}
+
+
+```
+
+```{r DBSCAN - GridSearch 3}
+
+tmp <- data.frame(DBSCAN_params)
+colnames(tmp) <- c("Eps", "Min_samples")
+tmp$No_of_clusters <- no_of_clusters
+
+pivot_1 <- dcast(tmp, Min_samples ~ Eps, value.var = "No_of_clusters")
+
+heatmap_data <- melt(pivot_1, id.vars = "Min_samples", variable.name = "Eps", value.name = "No_of_clusters")
+
+ggplot(heatmap_data, aes(x = Eps, y = factor(Min_samples), fill = No_of_clusters)) +
+  geom_tile() +
+  geom_text(aes(label = No_of_clusters), size = 2, color = "black") +
+  scale_fill_gradientn(colors = rev(brewer.pal(10, "YlGnBu"))) +
+  labs(title = "Number of clusters", x = "Eps", y = "Min_samples") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+It shows some number of cluster impossible (more than 20) and only one cluster in majority. However, some value could be interesting. To choose between these number of clusters we will plot the same Grid Search but now with silhouette average score
+
+
+```{r DBSCAN - GridSearch 4}
+
+# Create a data frame with the DBSCAN parameters and Silhouette scores
+tmp <- data.frame(Eps = unlist(DBSCAN_params[,1]),
+                  Min_samples = unlist(DBSCAN_params[,2]),
+                  Sil_score = sil_score)
+
+# Create a pivot table (wide format)
+pivot_1 <- dcast(tmp, Min_samples ~ Eps, value.var = "Sil_score")
+
+# Create the heatmap using ggplot2
+fig2_DBSCAN <- ggplot(tmp, aes(x = Eps, y = Min_samples, fill = round(Sil_score,3))) +
+  geom_tile() +
+  geom_text(aes(label = round(Sil_score, 3)), size = 3, color = "black", angle = 90) +
+  scale_fill_gradientn(colors = rev(brewer.pal(9, "YlGnBu"))) +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+print(fig2_DBSCAN)
+
+
+```
+
+The problem with this graph is that we have average silhouette score higher than 1. As we explained in the K-means part, it should be between –1 and 1. For the number of clusters which were interesting us: 4-15, it is always number of at least 3–4-digit score. Because we did not understand why it was so huge, we will not go further with this model too. 
+
+
+# 5- Results: 
+
+## A- Graphs/plots: 
+
+```{r K-means - 3D plot}
+
+plot_3d_KMeans <- plot_3d_Clusters(df, "Cluster_Kmeans_label_name")
+
+plot_3d_KMeans
+
+```
+
+In this 3D plot, you are able to see the repartition of the clusters depending on 3 variables: Income, Spending Score and age 
+
+```{r K-means - proportion gender by cluster}
+
+fig_gender_repartition_Kmeans  <- Function_gender_repartition(df,"Cluster_Kmeans_label_name",order)
+fig_gender_repartition_Kmeans
+```
+
+On this plot, you can see the repartition of both gender in each group. They approximatively have the same repartition. Unles for Target –Young and Least valuable who has on average more women than other groups.
+  
+```{r K-means - plot comparative Least valuable_target_old}
+comparative_cluster <-  Function_comparative_cluster(df,"Cluster_Kmeans_label_name","Least valuable","Target - Old")
+comparative_cluster
+```
+	On this plot, and there is possibility to choose directly the clusters in our RshinyApp, you can compare the mean of each variable for clusters.  
+
+## B- Succes/failure of our models: 
+
+	We have chosen as metric the silhouette average score to determine which model is the best. If you look at well the 3D plot by playing with it, you can see that there are some outliers which should not belong to the cluster according to the 3 variables (probably due to the family size variable). Furthermore, we also tried to do an affinity propagation model, but we failed. 
+	
+## C- Stakeholders' advice:  
+
+You can find this text on the “conclusion” slide of our RShiny App. Indeed, it is the deliverable we would give to the company. 
+
+As you have been able to see, we have given names to cluster to allow you to quickly pinpoint which kind of cluster it is. We will give you some advice of advertisement. 
+
+Least valuable, Less valuable - Young, Less valuable - old are clusters which have a low spending score. Moreover, comparatively to the other cluster their income is low, particularly the least valuable income. It is not necessary to advertise them a lot if they do not have the income, they could simply take your mail or message as spam and do not come anymore. However, it can be interesting to give voucher per mail or advertise family product to the 'Less valuable - Young' which have bigger family. Playing with the quantity sold to them, and not on the direct margin can be a good move. 
+
+Valuable and most valuable are cluster which are doubled. Each of these clusters exist with young and old people. Each of them has already high spending score, so advertisement to have more buying is not the aim. However, it can be interesting to target the type of people they are, if you do sms/mail campaign. Indeed, Valuable - Old and Most valuable - Young have a higher number of family number. It may be not a good idea to advertise them family promotion, because they would buy anyway. Nevertheless, it can be interesting to propose them family product depending on which product you sell to keep them aware that you sell these products. 
+
+Target - Old and Target young are the most interesting. They have a big income but a low spending score. Following, the other analytic survey we gave you 2 weeks ago in Industrial Organization of your store, you suffer a lot from competition of another store. Here, you do not have to advertise promotion/give voucher or other because they have money to spend. The goal of your SMS/mail campaign will be to emphasize the quality of your product compared to your competitor and the brand name of your shop. 
+
+ 
+
+```{r Export of dataframe}
+write.csv(df, "../Data/dfClusters.csv", row.names = FALSE)
+```
+
+
+Bibliography: 
+
+[1] Shop Customer Data - Kaggle - https://www.kaggle.com/datasets/datascientistanna/customers-dataset 
+
+[2] https://www.ibm.com/support/pages/clustering-binary-data-k-means-should-be-avoided 
