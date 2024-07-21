@@ -50,13 +50,13 @@ ui <- shinyUI(
                  column(12, p("If you are looking for the code of the full project you can find it here : https://github.com/Barucee/TSE_Data_Analytics_22_23 .")),
                  column(12, h2("Introduction")),
                  column(12, p("Here is your app which will allow you to compare and understand the data of your shop.")),
-                 column(12, p("You will find different slide which will allow you to understand different characteristics of your
+                 column(12, p("You will find different slides that will allow you  understand various characteristics of your
                               customers. Furthermore, you will have the output of our clustering ML model in  order to know at which
-                              group they belong.")),
+                              group they belong to, and we advice you to do.")),
                  column(12, HTML("<ul>  
-                     <li> Descriptive statistics by gender : Display distribution of your choosen variable segmented by the gender.
+                     <li> Descriptive statistics by gender : Displays distribution of your choosen variable segmented by the gender.
                      Moreover, you will be able to watch the average of your variable choosen for both gender </li> 
-                     <li> Descriptive statistics by profession : Display distribution of your choosen variable segmented by the 
+                     <li> Descriptive statistics by profession : Displays distribution of your choosen variable segmented by the 
                      profession choosen. Besides, you will be able to watch the average of your variable choosen for the profession
                      selected.</li> 
                      <li> 3D Plot : Here, is an interactive 3D plot displaying the cluster depending on 3 variables : Age,
@@ -177,13 +177,13 @@ ui <- shinyUI(
                fluidRow(
                  column(12, h2("Conclusion")),
                  column(12, p("As you have been able to see, we have given names to cluster to allow you to quickly 
-                              pinpoint which kind of cluster it is. We will give you some advice of advertisement")),
+                              pinpoint which kind of cluster it is. We will give you some advice on advertisement")),
                  column(12, HTML("<ul> 
                      <li> Least valuable, Less valuable - Young, Less valuable - old are clusters which have a low spending score.
-                     Moreover, comparatively to the other cluster their income is low, particularly the least valuable income. It
+                     Moreover, comparatively to the other clusters their income is low, particularly the least valuable income. It
                      is not necessary to advertise them a lot if they do not have the income, they could simply take your mail or message
-                     as spam and do not come anymore. However, it can be interesting to give voucher per mail or advertise family product to 
-                     the 'Less valuable - Young' which have bigger family. Playing with the quantity sold to them, and not on the direct margin
+                     as spam and stop coming. However, it can be interesting to give voucher per mail or advertise family product to 
+                     the 'Less valuable - Young' which have bigger family. Focusing on the quantity sold to them, and not on the direct margin
                      can be a good move.</li> 
                      <li> Valuable and most valuable are cluster which are doubled. Each of these clusters exist with young and old people.
                      Each of them has already high spending score, so advertisement to have more buying is not the aim. However,
@@ -191,8 +191,8 @@ ui <- shinyUI(
                      Most valuable - Young have an higher number of family number. It is may be not a good idea to advertise them family
                      promotion, because they would buy anyway. Nevertheless, it can be interesting to propose them family product depending
                      on which product you sell to keep them aware that you sell these products.</li> 
-                     <li> Target - Old and Target young are the most interesting. They have a big income but a low spending score. Following,
-                     the other analytic survey we gave you 2 weeks ago in Industrial Organization of your store, you suffer a lot from competition
+                     <li> Target - Old and Target young are the most interesting. They have a big income but a low spending score. According to
+                     the other analytical survey we gave you 2 weeks ago in Industrial Organization of your store, you suffer a lot from competition
                      of another store. Here, you do not have to advertise promotion/give voucher or other because they have money to spend.
                      The goal of your sms/mail campaign will be to emphasize the quality of your product compared to your competitor
                      and the brand name of your shop.</li> 
